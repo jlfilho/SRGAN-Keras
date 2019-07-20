@@ -21,7 +21,7 @@ from keras.optimizers import Adam
 #from keras.utils.data_utils import OrderedEnqueuer, SequenceEnqueuer, GeneratorEnqueuer
 from tensorflow.keras.utils import OrderedEnqueuer, GeneratorEnqueuer, SequenceEnqueuer
 from keras.callbacks import TensorBoard, ModelCheckpoint, LambdaCallback
-from keras.callbacks import ReduceLROnPlateau, EarlyStopping
+from keras.callbacks import ReduceLROnPlateau, EarlyStopping, LearningRateScheduler
 from keras import backend as K
 from tqdm import tqdm
 
@@ -42,7 +42,7 @@ class SRGAN():
     def __init__(self, 
         height_lr=24, width_lr=24, channels=3,
         upscaling_factor=4, 
-        gen_lr=1e-4, dis_lr=1e-4, loss_weights=[0.006, 1e-3], 
+        gen_lr=1e-4, dis_lr=1e-4, loss_weights=[0.006, 1e-4], 
         training_mode=True,
         colorspace = 'RGB'
     ):
@@ -57,7 +57,6 @@ class SRGAN():
         """
         
         
-
         # Low-resolution image dimensions
         self.height_lr = height_lr
         self.width_lr = width_lr
@@ -143,6 +142,7 @@ class SRGAN():
         :return: the compiled model
         """
 
+
         def residual_block(input):
             x = Conv2D(64, kernel_size=3, strides=1, padding='same')(input)
             if self.training_mode:
@@ -172,6 +172,7 @@ class SRGAN():
         for _ in range(residual_blocks - 1):
             x = residual_block(x)
 
+
         # Post-residual block
         x = Conv2D(64, kernel_size=3, strides=1, padding='same',name='Conv-pos')(x)
         if self.training_mode:
@@ -184,6 +185,7 @@ class SRGAN():
             x = upsample(x, 2)
         if self.upscaling_factor > 4:
             x = upsample(x, 3)
+
         
         # Generate high resolution output
         # tanh activation, see: 
@@ -195,11 +197,11 @@ class SRGAN():
             padding='same', 
             activation='tanh',name='Conv-out'
         )(x)
+
         # Create model 
         model = Model(inputs=lr_input, outputs=x,name='Generator')        
         #model.summary()
         return model
-
   
     def build_discriminator(self, filters=64):
         """
@@ -383,18 +385,19 @@ class SRGAN():
         callbacks.append(modelcheckpoint)
 
         # Callback: Reduce lr when a monitored quantity has stopped improving
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=1e-1,
-                                    patience=100, min_lr=1e-6,verbose=1)
-        #callbacks.append(reduce_lr)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5,
+                                    patience=50, min_lr=1e-5,verbose=1)
+        callbacks.append(reduce_lr)
 
-
-        # Callback: save weights after each epoch
-        modelcheckpoint = ModelCheckpoint(
-            os.path.join(log_weight_path, modelname + '_{}X.h5'.format(self.upscaling_factor)), 
-            monitor='val_loss', 
-            save_best_only=True, 
-            save_weights_only=True)
-        callbacks.append(modelcheckpoint)
+        # Learning rate scheduler
+        def lr_scheduler(epoch, lr):
+            factor = 0.5
+            decay_step = 100 #100 epochs * 2000 step per epoch = 2x1e5
+            if epoch % decay_step == 0 and epoch:
+                return lr * factor
+            return lr
+        lr_scheduler = LearningRateScheduler(lr_scheduler, verbose=1)
+        callbacks.append(lr_scheduler)
  
         
          # Callback: test images plotting
@@ -635,7 +638,8 @@ class SRGAN():
             print_frequency = False,
             qp = 8,
             fps = None,
-            media_type = None 
+            media_type = None,
+            gpu=False 
         ):
         """ lr_videopath: path of video in low resoluiton
             sr_videopath: path to output video 
@@ -645,7 +649,7 @@ class SRGAN():
             media_type: type of media 'v' to video and 'i' to image
         """
         if(media_type == 'v'):
-            time_elapsed = restore.write_srvideo(self.generator,lr_path,sr_path,self.upscaling_factor,print_frequency=print_frequency,crf=qp,fps=fps)
+            time_elapsed = restore.write_srvideo(self.generator,lr_path,sr_path,self.upscaling_factor,print_frequency=print_frequency,crf=qp,fps=fps,gpu=gpu)
         elif(media_type == 'i'):
             time_elapsed = restore.write_sr_images(self.generator, lr_imagepath=lr_path, sr_imagepath=sr_path,scale=self.upscaling_factor)
         else:
@@ -656,19 +660,71 @@ class SRGAN():
 # Run the SRGAN network
 if __name__ == "__main__":
 
-    # Instantiate the SRGAN object
+    
+    # --------------------------------------------------------------------------------------
     print(">> Creating the SRResNet network")
     SRResNet = SRGAN(upscaling_factor=2,channels=3,colorspace='RGB',training_mode=True)
     SRResNet.load_weights('../model/SRResNet_places365_2X.h5')
+
+    datapath = '../../data/videoset/540p/' 
+    outpath = '../out/SRResNet/540p_2X/' 
+    i=1
+    for dirpath, _, filenames in os.walk(datapath):
+        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
+            print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
+            if(i>0):
+                t = SRResNet.predict(
+                        lr_path=os.path.join(dirpath, filename), 
+                        sr_path=outpath+filename.split('.')[0]+'.mp4',
+                        qp=0,
+                        media_type='v',
+                        gpu=True
+                    )
+            i+=1
+
+    datapath = '../../data/videoset/360p/' 
+    outpath = '../out/SRResNet/360p_2X/'
+    for dirpath, _, filenames in os.walk(datapath):
+        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
+            print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
+            t = SRResNet.predict(
+                    lr_path=os.path.join(dirpath, filename), 
+                    sr_path=outpath+filename.split('.')[0]+'.mp4',
+                    qp=0,
+                    media_type='v',
+                    gpu=True
+                )
     
-    t = SRResNet.predict(
-            lr_path='../../../data/videos_harmonic/MYANMAR_2160p/LR/2x/myanmar01_cv_2x_qp0.mp4', 
-            sr_path='../out/myanmar01_cv_2x_qp0.mp4',
-            qp=8,
-            print_frequency=1,
-            fps=30,
-            media_type='v'
-    )
+    # Instantiate the SRGAN object
+    print(">> Creating the SRGAN network")
+    SRResNet = SRGAN(upscaling_factor=2,channels=3,colorspace='RGB',training_mode=True)
+    SRResNet.load_weights('../model/SRGAN_places365_generator_2X.h5')
+    
+    datapath = '../../data/videoset/540p/' 
+    outpath = '../out/SRGAN/540p_2X/' 
+    for dirpath, _, filenames in os.walk(datapath):
+        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
+            print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
+            t = SRResNet.predict(
+                    lr_path=os.path.join(dirpath, filename), 
+                    sr_path=outpath+filename.split('.')[0]+'.mp4',
+                    qp=0,
+                    media_type='v',
+                    gpu=True
+                )
+
+    datapath = '../../data/videoset/360p/' 
+    outpath = '../out/SRGAN/360p_2X/'
+    for dirpath, _, filenames in os.walk(datapath):
+        for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
+            print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
+            t = SRResNet.predict(
+                    lr_path=os.path.join(dirpath, filename), 
+                    sr_path=outpath+filename.split('.')[0]+'.mp4',
+                    qp=0,
+                    media_type='v',
+                    gpu=True
+                ) 
 
 
 
