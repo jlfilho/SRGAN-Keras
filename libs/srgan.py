@@ -661,14 +661,15 @@ class SRGAN():
 if __name__ == "__main__":
 
     
+    """ 
     # --------------------------------------------------------------------------------------
     print(">> Creating the SRResNet network")
     SRResNet = SRGAN(upscaling_factor=2,channels=3,colorspace='RGB',training_mode=True)
     SRResNet.load_weights('../model/SRResNet_places365_2X.h5')
-
-    datapath = '../../data/videoset/540p/' 
-    outpath = '../out/SRResNet/540p_2X/' 
     i=1
+
+    datapath = '../../data/videoset/1080p/' 
+    outpath = '../out/SRResNet/540p_2X/' 
     for dirpath, _, filenames in os.walk(datapath):
         for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
             print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
@@ -680,40 +681,44 @@ if __name__ == "__main__":
                         media_type='v',
                         gpu=True
                     )
-            i+=1
+            i+=1 
 
-    datapath = '../../data/videoset/360p/' 
+    datapath = '../../data/videoset/720p/' 
     outpath = '../out/SRResNet/360p_2X/'
     for dirpath, _, filenames in os.walk(datapath):
         for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
             print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
-            t = SRResNet.predict(
-                    lr_path=os.path.join(dirpath, filename), 
-                    sr_path=outpath+filename.split('.')[0]+'.mp4',
-                    qp=0,
-                    media_type='v',
-                    gpu=True
-                )
+            if i > 48:
+                t = SRResNet.predict(
+                        lr_path=os.path.join(dirpath, filename), 
+                        sr_path=outpath+filename.split('.')[0]+'.mp4',
+                        qp=0,
+                        media_type='v',
+                        gpu=True
+                    )
+            i+=1"""
     
     # Instantiate the SRGAN object
     print(">> Creating the SRGAN network")
     SRResNet = SRGAN(upscaling_factor=2,channels=3,colorspace='RGB',training_mode=True)
     SRResNet.load_weights('../model/SRGAN_places365_generator_2X.h5')
-    
-    datapath = '../../data/videoset/540p/' 
+    i=1
+    datapath = '../../data/videoset/1080p/' 
     outpath = '../out/SRGAN/540p_2X/' 
     for dirpath, _, filenames in os.walk(datapath):
         for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
             print(os.path.join(dirpath, filename),outpath+filename.split('.')[0]+'.mp4')
-            t = SRResNet.predict(
-                    lr_path=os.path.join(dirpath, filename), 
-                    sr_path=outpath+filename.split('.')[0]+'.mp4',
-                    qp=0,
-                    media_type='v',
-                    gpu=True
-                )
+            if i > 144:
+                t = SRResNet.predict(
+                        lr_path=os.path.join(dirpath, filename), 
+                        sr_path=outpath+filename.split('.')[0]+'.mp4',
+                        qp=0,
+                        media_type='v',
+                        gpu=True
+                    )
+            i+=1
 
-    datapath = '../../data/videoset/360p/' 
+    datapath = '../../data/videoset/720p/' 
     outpath = '../out/SRGAN/360p_2X/'
     for dirpath, _, filenames in os.walk(datapath):
         for filename in [f for f in sorted(filenames) if any(filetype in f.lower() for filetype in ['jpeg', 'png', 'jpg','mp4','264','webm','wma'])]:
